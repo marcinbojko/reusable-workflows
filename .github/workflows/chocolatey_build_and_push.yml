@@ -24,7 +24,21 @@ on:
       MYGET_API_KEY:
         required: true
 
-permissions: read-all
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+  deployments: read
+  discussions: read
+  issues: read
+  packages: write
+  pages: read
+  pull-requests: write
+  repository-projects: read
+  security-events: read
+  statuses: write
+  checks: write
+  id-token: write
 
 env:
   PACKAGE_NAME: ${{ inputs.package_name }}
