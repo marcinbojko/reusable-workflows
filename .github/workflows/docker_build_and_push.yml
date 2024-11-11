@@ -1,0 +1,111 @@
+name: Docker Build and Push
+on:
+  workflow_call:
+    inputs:
+      super_linter_envs:
+        type: string
+        required: false
+        default: "{}"
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+  deployments: read
+  discussions: read
+  issues: read
+  packages: write
+  pages: read
+  pull-requests: write
+  repository-projects: read
+  security-events: read
+  statuses: write
+  checks: write
+  id-token: write
+
+jobs:
+  buildx:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: checkout
+        uses: actions/checkout@main
+      - name: Prepare variables for docker build
+        id: build_push
+        run: |
+          echo "$GITHUB_REF"
+          release=$(grep -i "LABEL RELEASE" Dockerfile|awk '{print $2}'|cut -d\" -f2)
+          version=$(grep -i "LABEL VERSION" Dockerfile|awk '{print $2}'|cut -d\" -f2)
+          maintainer=$(grep -i "LABEL MAINTAINER" Dockerfile|awk '{print $2}'|cut -d\" -f2)
+          if [ -z "$version" ]
+          then
+              if [[ "$GITHUB_REF" == refs/tags/* ]]
+              then
+                  version=${GITHUB_REF#refs/tags/}
+                  echo "Using tag reference: ${version}"
+              elif [[ "$GITHUB_REF" == "refs/heads/main" ]] || [[ "$GITHUB_REF" == "refs/heads/master" ]]
+              then
+                  version=${GITHUB_SHA::7}
+                  echo "Using commit SHA: ${version}"
+              else
+                  version=$(openssl rand -hex 4)
+                  echo "Using random version: ${version}"
+              fi
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "maintainer=$maintainer" >> "$GITHUB_OUTPUT"
+          echo "Proposed image tags will be: ${maintainer}/${release}:${version}"
+      - name: Build and push
+        id: docker-dev
+        uses: docker/build-push-action@v5
+        if: (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master')
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: "${{ steps.build_push.outputs.maintainer }}/${{ steps.build_push.outputs.release }}:${{ steps.build_push.outputs.version }}-dev"
+        env:
+          SOURCE_DATE_EPOCH: 0
+      - name: Run Trivy vulnerability scanner
+        if: (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master')
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.build_push.outputs.maintainer }}/${{ steps.build_push.outputs.release }}:${{ steps.build_push.outputs.version }}-dev"
+          format: "table"
+          #output: 'trivy-results.sarif'
+          timeout: "20m0s"
+        env:
+          TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2"
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: "${{ steps.build_push.outputs.maintainer }}/${{ steps.build_push.outputs.release }}:${{ steps.build_push.outputs.version }}"
+        env:
+          SOURCE_DATE_EPOCH: 0
+      - name: Run Trivy vulnerability scanner
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.build_push.outputs.maintainer }}/${{ steps.build_push.outputs.release }}:${{ steps.build_push.outputs.version }}"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          timeout: "20m0s"
+        env:
+          TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2"

@@ -1,0 +1,99 @@
+name: Chocolatey Build and Push
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        description: "Name of the package to process"
+        type: string
+        required: true
+        default: "trivy"
+      package_source_main:
+        description: "Main package source URL"
+        type: string
+        required: true
+        default: "https://push.chocolatey.org/"
+      package_source_test:
+        description: "Test package source URL"
+        type: string
+        required: true
+        default: "https://www.myget.org/F/public-choco-dev/api/v2/package"
+    secrets:
+      CHOCO_API_KEY:
+        required: true
+      MYGET_API_KEY:
+        required: true
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+  deployments: read
+  discussions: read
+  issues: read
+  packages: write
+  pages: read
+  pull-requests: write
+  repository-projects: read
+  security-events: read
+  statuses: write
+  checks: write
+  id-token: write
+
+env:
+  PACKAGE_NAME: ${{ inputs.package_name }}
+  PACKAGE_SOURCE_MAIN: ${{ inputs.package_source_main }}
+  PACKAGE_SOURCE_TEST: ${{ inputs.package_source_test }}
+
+jobs:
+  super-lint:
+    name: Lint code base
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run Super-Linter
+        uses: github/super-linter@main
+        env:
+          DEFAULT_BRANCH: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: ${{ github.event_name != 'pull_request' }}
+
+  build:
+    needs: [super-lint]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-2019, windows-2022]
+      fail-fast: false # Continue with other OS if one fails
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Choco pack
+        uses: crazy-max/ghaction-chocolatey@v3
+        with:
+          args: pack
+
+      - name: Choco install ${{ env.PACKAGE_NAME }}
+        uses: crazy-max/ghaction-chocolatey@v3
+        with:
+          args: install ${{ env.PACKAGE_NAME }} -y -s .
+
+      - name: Run version check
+        shell: powershell
+        run: |
+          ${{ env.PACKAGE_NAME }} version
+
+      # Branch-Specific Steps with environment variables
+      - name: Push to Chocolatey on main or master
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && matrix.os == 'windows-2022'
+        uses: crazy-max/ghaction-chocolatey@v3
+        with:
+          args: push --source ${{ env.PACKAGE_SOURCE_MAIN }} -k=${{ secrets.CHOCO_API_KEY }}
+
+      - name: Push to MyGet on test branch
+        if: github.ref == 'refs/heads/test'
+        uses: crazy-max/ghaction-chocolatey@v3
+        with:
+          args: push --source ${{ env.PACKAGE_SOURCE_TEST }} -k=${{ secrets.MYGET_API_KEY }}
