@@ -87,7 +87,7 @@ jobs:
           args: install ${{ env.PACKAGE_NAME }} -y -s .
 
       - name: Run version check
-        if: ${{ env.RUN_TESTS }}
+        if: ${{ env.RUN_TESTS == 'true' }}
         shell: powershell
         run: |
           ${{ env.PACKAGE_NAME }} version
