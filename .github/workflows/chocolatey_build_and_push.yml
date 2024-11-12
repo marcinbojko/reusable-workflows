@@ -17,6 +17,11 @@ on:
         type: string
         required: true
         default: "https://www.myget.org/F/public-choco-dev/api/v2/package"
+      run_tests:
+        description: "Run tests"
+        type: boolean
+        required: false
+        default: true
     secrets:
       CHOCO_API_KEY:
         required: true
@@ -43,6 +48,7 @@ env:
   PACKAGE_NAME: ${{ inputs.package_name }}
   PACKAGE_SOURCE_MAIN: ${{ inputs.package_source_main }}
   PACKAGE_SOURCE_TEST: ${{ inputs.package_source_test }}
+  RUN_TESTS: ${{ inputs.run_tests }}
 
 jobs:
   super-lint:
@@ -81,6 +87,7 @@ jobs:
           args: install ${{ env.PACKAGE_NAME }} -y -s .
 
       - name: Run version check
+        if: ${{ env.RUN_TESTS }}
         shell: powershell
         run: |
           ${{ env.PACKAGE_NAME }} version
