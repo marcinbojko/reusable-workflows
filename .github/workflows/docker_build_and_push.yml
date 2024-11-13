@@ -31,6 +31,27 @@ jobs:
   buildx:
     runs-on: ubuntu-latest
     steps:
+      - name: Check disk space before cleanup
+        run: |
+          echo "Available disk space:"
+          df -h
+          echo "Docker space usage:"
+          docker system df
+        continue-on-error: true
+      - name: Free up disk space
+        run: |
+          sudo swapoff -a
+          sudo rm -rf /swapfile
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+        continue-on-error: true
+      - name: Check disk space after cleanup
+        run: |
+          echo "Available disk space:"
+          df -h
+          echo "Docker space usage:"
+          docker system df
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -40,7 +61,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: checkout
+      - name: Checkout code
         uses: actions/checkout@main
       - name: Prepare variables for docker build
         id: build_push
@@ -68,7 +89,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "maintainer=$maintainer" >> "$GITHUB_OUTPUT"
           echo "Proposed image tags will be: ${maintainer}/${release}:${version}"
-      - name: Build and push
+      - name: Build and push for dev/test
         id: docker-dev
         uses: docker/build-push-action@v5
         if: (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master')
@@ -79,7 +100,7 @@ jobs:
           tags: "${{ steps.build_push.outputs.maintainer }}/${{ steps.build_push.outputs.release }}:${{ steps.build_push.outputs.version }}-dev"
         env:
           SOURCE_DATE_EPOCH: 0
-      - name: Run Trivy vulnerability scanner
+      - name: Run Trivy vulnerability scanner for dev/test
         if: (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master')
         uses: aquasecurity/trivy-action@master
         with:
@@ -89,7 +110,7 @@ jobs:
           timeout: "20m0s"
         env:
           TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2"
-      - name: Build and push
+      - name: Build and push production image
         uses: docker/build-push-action@v5
         if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
         with:
@@ -99,7 +120,7 @@ jobs:
           tags: "${{ steps.build_push.outputs.maintainer }}/${{ steps.build_push.outputs.release }}:${{ steps.build_push.outputs.version }}"
         env:
           SOURCE_DATE_EPOCH: 0
-      - name: Run Trivy vulnerability scanner
+      - name: Run Trivy vulnerability scanner for production
         if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
         uses: aquasecurity/trivy-action@master
         with:
