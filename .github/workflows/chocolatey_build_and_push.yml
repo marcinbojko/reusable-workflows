@@ -69,7 +69,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-2019, windows-2022]
+        os: [windows-2019, windows-2025, windows-2022]
       fail-fast: false # Continue with other OS if one fails
 
     steps:
