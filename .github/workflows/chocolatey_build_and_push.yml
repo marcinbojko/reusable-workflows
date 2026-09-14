@@ -96,8 +96,8 @@ jobs:
           ${{ env.PACKAGE_NAME }} version
 
       # Branch-Specific Steps with environment variables
-      - name: Push to Chocolatey on main or master
-        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && matrix.os == 'windows-2022'
+      - name: Push to Chocolatey on main, master or tag
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && matrix.os == 'windows-2022'
         uses: Wandalen/wretry.action@v3
         with:
           action: crazy-max/ghaction-chocolatey@v3
